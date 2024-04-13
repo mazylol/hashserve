@@ -1,3 +1,5 @@
+mod config;
+
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -8,6 +10,7 @@ use axum::{
     Router,
 };
 use axum_extra::TypedHeader;
+use clap::Parser;
 
 use std::sync::{Arc, Mutex};
 use std::net::SocketAddr;
@@ -24,6 +27,8 @@ struct ServerState {
 
 #[tokio::main]
 async fn main() {
+    let config = config::Configuration::parse();
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -44,7 +49,7 @@ async fn main() {
         )
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", config.port))
         .await
         .unwrap();
 
