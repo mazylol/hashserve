@@ -12,8 +12,8 @@ use axum::{
 use axum_extra::TypedHeader;
 use clap::Parser;
 
-use std::sync::{Arc, Mutex};
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -93,14 +93,13 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<Mutex<
                 match msg {
                     Message::Text(text) => {
                         state.lock().unwrap().master_vec.push(text.clone());
-                    },
+                    }
                     _ => {
                         println!("Received non-text message from {who}");
                     }
                 };
 
                 println!("master_vec: {:?}", state.lock().unwrap().master_vec);
-                socket.send(Message::Text(String::from("uwu"))).await.unwrap();
             }
         } else {
             println!("client {who} abruptly disconnected");
