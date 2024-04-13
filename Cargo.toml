@@ -1,0 +1,20 @@
+[package]
+name = "hashserve"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum = { version = "0.7.5", features = ["ws"] }
+axum-extra = { version = "0.9.3", features = ["typed-header"] }
+clap = { version = "4.5.4", features = ["derive"] }
+futures = "0.3.30"
+futures-util = { version = "0.3.30", default-features = false, features = ["sink", "std"] }
+headers = "0.4.0"
+tokio = { version = "1.37.0", features = ["full"] }
+tokio-tungstenite = "0.21.0"
+tower = { version = "0.4.13", features = ["util"] }
+tower-http = { version = "0.5.2", features = ["fs", "trace", "add-extension"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
