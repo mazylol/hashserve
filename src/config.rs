@@ -12,4 +12,7 @@ pub struct Configuration {
     #[arg(long)]
     #[clap(default_value = "false")]
     pub persist: bool,
+
+    #[arg(long)]
+    pub password: String,
 }

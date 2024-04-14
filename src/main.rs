@@ -1,19 +1,22 @@
 mod config;
+mod lexer;
 
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        State,
+        Query, State,
     },
+    http::StatusCode,
     response::IntoResponse,
     routing::get,
     Router,
 };
 use axum_extra::TypedHeader;
 use clap::Parser;
+use serde::Deserialize;
 
-use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::{collections::HashMap, net::SocketAddr};
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -22,7 +25,13 @@ use axum::extract::connect_info::ConnectInfo;
 
 #[derive(Clone)]
 struct ServerState {
-    master_vec: Vec<String>,
+    master_hashmap: HashMap<String, String>,
+    password: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct Params {
+    password: Option<String>,
 }
 
 #[tokio::main]
@@ -38,7 +47,8 @@ async fn main() {
         .init();
 
     let state = Arc::new(Mutex::new(ServerState {
-        master_vec: Vec::new(),
+        master_hashmap: HashMap::new(),
+        password: config.password.clone(),
     }));
 
     let app = Router::new()
@@ -67,7 +77,16 @@ async fn ws_handler(
     user_agent: Option<TypedHeader<headers::UserAgent>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<Mutex<ServerState>>>,
+    Query(params): Query<Params>,
 ) -> impl IntoResponse {
+    if let Some(password) = params.password {
+        if password != state.lock().unwrap().password {
+            return (StatusCode::UNAUTHORIZED, "Invalid password").into_response();
+        }
+    } else {
+        return (StatusCode::BAD_REQUEST, "Password required").into_response();
+    }
+
     let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
         user_agent.to_string()
     } else {
@@ -92,14 +111,44 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<Mutex<
                 println!("Received message from {who}: {:?}", msg);
                 match msg {
                     Message::Text(text) => {
-                        state.lock().unwrap().master_vec.push(text.clone());
+                        let (command, key, value) = lexer::Lexer::parse(text);
+
+                        match command {
+                            lexer::Command::Add => {
+                                let mut state = state.lock().unwrap();
+                                let _ = state.master_hashmap.insert(key, value);
+                            }
+                            lexer::Command::Get => {
+                                let value = {
+                                    let state = state.lock().unwrap();
+                                    state.master_hashmap.get(&key).cloned()
+                                };
+                                match value {
+                                    Some(value) => {
+                                        let _ = socket.send(Message::Text(value)).await;
+                                    }
+                                    None => {
+                                        let _ = socket
+                                            .send(Message::Text("Key not found".to_string()))
+                                            .await;
+                                    }
+                                }
+                            }
+                            lexer::Command::Delete => {
+                                let mut state = state.lock().unwrap();
+                                let _ = state.master_hashmap.remove(&key);
+                            }
+                            lexer::Command::Invalid => {
+                                let _ = socket
+                                    .send(Message::Text("Invalid command".to_string()))
+                                    .await;
+                            }
+                        };
                     }
                     _ => {
                         println!("Received non-text message from {who}");
                     }
-                };
-
-                println!("master_vec: {:?}", state.lock().unwrap().master_vec);
+                }
             }
         } else {
             println!("client {who} abruptly disconnected");
