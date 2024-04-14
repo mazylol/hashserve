@@ -13,6 +13,7 @@ pub struct Configuration {
     #[clap(default_value = "false")]
     pub persist: bool,
 
+    /// Set the servers password
     #[arg(long)]
     pub password: String,
 }

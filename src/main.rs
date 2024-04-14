@@ -1,5 +1,6 @@
 mod config;
 mod lexer;
+mod save;
 
 use axum::{
     extract::{
@@ -27,6 +28,7 @@ use axum::extract::connect_info::ConnectInfo;
 struct ServerState {
     master_hashmap: HashMap<String, String>,
     password: String,
+    persist: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,7 +51,18 @@ async fn main() {
     let state = Arc::new(Mutex::new(ServerState {
         master_hashmap: HashMap::new(),
         password: config.password.clone(),
+        persist: config.persist,
     }));
+
+    if config.persist {
+        let commands = save::load();
+
+        if let Ok(commands) = commands {
+            for command in commands {
+                handle_command(command, state.clone(), true);
+            }
+        }
+    }
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
@@ -111,39 +124,14 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<Mutex<
                 println!("Received message from {who}: {:?}", msg);
                 match msg {
                     Message::Text(text) => {
-                        let (command, key, value) = lexer::Lexer::parse(text);
+                        let msg = handle_command(text, state.clone(), false);
 
-                        match command {
-                            lexer::Command::Add => {
-                                let mut state = state.lock().unwrap();
-                                let _ = state.master_hashmap.insert(key, value);
+                        if let Some(msg) = msg {
+                            if socket.send(Message::Text(msg)).await.is_err() {
+                                println!("Could not send message to {who}");
+                                return;
                             }
-                            lexer::Command::Get => {
-                                let value = {
-                                    let state = state.lock().unwrap();
-                                    state.master_hashmap.get(&key).cloned()
-                                };
-                                match value {
-                                    Some(value) => {
-                                        let _ = socket.send(Message::Text(value)).await;
-                                    }
-                                    None => {
-                                        let _ = socket
-                                            .send(Message::Text("Key not found".to_string()))
-                                            .await;
-                                    }
-                                }
-                            }
-                            lexer::Command::Delete => {
-                                let mut state = state.lock().unwrap();
-                                let _ = state.master_hashmap.remove(&key);
-                            }
-                            lexer::Command::Invalid => {
-                                let _ = socket
-                                    .send(Message::Text("Invalid command".to_string()))
-                                    .await;
-                            }
-                        };
+                        }
                     }
                     _ => {
                         println!("Received non-text message from {who}");
@@ -155,4 +143,52 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<Mutex<
             return;
         }
     }
+}
+
+fn handle_command(unparsed_command: String, state: Arc<Mutex<ServerState>>, load_state: bool) -> Option<String> {
+    let parsed = lexer::Lexer::parse(unparsed_command.clone());
+
+    if let Err(_) = parsed {
+        return Some("Invalid command".to_string());
+    } else {
+        let (command, key, value) = parsed.unwrap();
+
+        match command {
+            lexer::Command::Add => {
+                let mut state = state.lock().unwrap();
+                let _ = state.master_hashmap.insert(key, value);
+
+                if state.persist && !load_state {
+                    save::save(unparsed_command).unwrap();
+                }
+            }
+            lexer::Command::Get => {
+                let value = {
+                    let state = state.lock().unwrap();
+                    state.master_hashmap.get(&key).cloned()
+                };
+                match value {
+                    Some(value) => {
+                        return Some(value);
+                    }
+                    None => {
+                        return Some("Key not found".to_string());
+                    }
+                }
+            }
+            lexer::Command::Delete => {
+                let mut state = state.lock().unwrap();
+                let _ = state.master_hashmap.remove(&key);
+
+                if state.persist && !load_state {
+                    save::save(unparsed_command).unwrap();
+                }
+            }
+            lexer::Command::Invalid => {
+                return Some("Invalid command".to_string());
+            }
+        };
+    }
+
+    return None;
 }
