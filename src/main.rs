@@ -145,7 +145,11 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<Mutex<
     }
 }
 
-fn handle_command(unparsed_command: String, state: Arc<Mutex<ServerState>>, load_state: bool) -> Option<String> {
+fn handle_command(
+    unparsed_command: String,
+    state: Arc<Mutex<ServerState>>,
+    load_state: bool,
+) -> Option<String> {
     let parsed = lexer::Lexer::parse(unparsed_command.clone());
 
     if let Err(_) = parsed {

@@ -11,7 +11,7 @@ pub enum Command {
 pub struct Lexer;
 
 impl Lexer {
-    pub fn parse(input: String) -> Result<(Command, String, String), Error> {
+    pub fn parse(mut input: String) -> Result<(Command, String, String), Error> {
         let command = match &input[0..3] {
             "ADD" => Command::Add,
             "GET" => Command::Get,
@@ -19,13 +19,16 @@ impl Lexer {
             _ => Command::Invalid,
         };
 
-        let mut split = input.split_whitespace();
+        let input_cp = input.clone();
+        let mut split = input_cp.split_whitespace();
         split.next();
 
         match command {
             Command::Add => {
                 let key = split.next().unwrap();
-                let value = split.next().unwrap();
+                input.replace_range(0..3, "");
+                input.replace_range(0..key.len() + 2, "");
+                let value = input;
                 return Ok((command, key.to_string(), value.to_string()));
             }
             Command::Get => {
