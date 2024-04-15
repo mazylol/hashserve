@@ -10,7 +10,7 @@ pub fn save(command: String) -> Result<(), Box<dyn std::error::Error>> {
         .append(true)
         .open("data.hsrv")?;
 
-    if let Err(e) = writeln!(file, "{}", command) {
+    if let Err(e) = writeln!(file, "{}", command.trim()) {
         eprintln!("Couldn't write to file: {}", e);
     }
 
