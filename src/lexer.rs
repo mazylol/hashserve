@@ -29,6 +29,11 @@ impl Lexer {
                 input.replace_range(0..3, "");
                 input.replace_range(0..key.len() + 2, "");
                 let value = input;
+
+                if value.is_empty() {
+                    return Err(Error);
+                }
+
                 return Ok((command, key.to_string(), value.to_string()));
             }
             Command::Get => {
