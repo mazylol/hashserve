@@ -2,6 +2,7 @@ mod config;
 mod lexer;
 mod save;
 
+use anyhow::Context;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -21,6 +22,8 @@ use std::{collections::HashMap, net::SocketAddr};
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use tracing as log;
 
 use axum::extract::connect_info::ConnectInfo;
 
@@ -76,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .unwrap();
 
-    tracing::debug!("listening on {}", listener.local_addr().unwrap());
+    log::info!("listening on {}", listener.local_addr().unwrap());
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
@@ -107,41 +110,41 @@ async fn ws_handler(
     } else {
         String::from("Unknown browser")
     };
-    println!("`{user_agent}` at {addr} connected.");
+    log::info!("`{user_agent}` at {addr} connected.");
 
     ws.on_upgrade(move |socket| handle_socket(socket, addr, state))
 }
 
 async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<Mutex<ServerState>>) {
     if socket.send(Message::Ping(vec![1, 2, 3])).await.is_ok() {
-        println!("Pinged {who}...");
+        log::info!("Pinged {who}...");
     } else {
-        println!("Could not send ping {who}");
+        log::error!("Could not send ping {who}");
         return;
     }
 
     loop {
         if let Some(msg) = socket.recv().await {
             if let Ok(msg) = msg {
-                println!("Received message from {who}: {:?}", msg);
+                log::info!("Received message from {who}: {:?}", msg);
                 match msg {
                     Message::Text(text) => {
                         let msg = handle_command(text, state.clone(), false);
 
                         if let Some(msg) = msg {
                             if socket.send(Message::Text(msg)).await.is_err() {
-                                println!("Could not send message to {who}");
+                                log::error!("Could not send message to {who}");
                                 return;
                             }
                         }
                     }
                     _ => {
-                        println!("Received non-text message from {who}");
+                        log::error!("Received non-text message from {who}");
                     }
                 }
             }
         } else {
-            println!("Client {who} abruptly disconnected");
+            log::info!("Client {who} abruptly disconnected");
             return;
         }
     }
@@ -162,10 +165,10 @@ fn handle_command(
         match command {
             lexer::Command::Add => {
                 let mut state = state.lock().unwrap();
-                let _ = state.master_hashmap.insert(key, value);
+                let _ = state.master_hashmap.insert(key.clone(), value);
 
                 if state.persist && !load_state {
-                    save::save(unparsed_command).unwrap();
+                    save::save(unparsed_command).context(format!("Failed to append ADD {} to savefile", key)).unwrap();
                 }
             }
             lexer::Command::Get => {
@@ -187,7 +190,7 @@ fn handle_command(
                 let _ = state.master_hashmap.remove(&key);
 
                 if state.persist && !load_state {
-                    save::save(unparsed_command).unwrap();
+                    save::save(unparsed_command).context(format!("Failed to append DELETE {key} to savefile")).unwrap();
                 }
             }
             lexer::Command::Invalid => {

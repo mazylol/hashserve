@@ -5,6 +5,8 @@ use std::{
 
 use anyhow::{Error, Result};
 
+use tracing as log;
+
 pub fn save(command: String) -> Result<(), Error> {
     let mut file = OpenOptions::new()
         .write(true)
@@ -13,7 +15,7 @@ pub fn save(command: String) -> Result<(), Error> {
         .open("data.hsrv")?;
 
     if let Err(e) = writeln!(file, "{}", command.trim()) {
-        eprintln!("Couldn't write to file: {}", e);
+        log::error!("Couldn't write to file: {}", e);
     }
 
     Ok(())
