@@ -37,7 +37,7 @@ struct Params {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let config = config::Configuration::parse();
 
     tracing_subscriber::registry()
@@ -83,6 +83,8 @@ async fn main() {
     )
     .await
     .unwrap();
+
+    Ok(())
 }
 
 async fn ws_handler(
@@ -139,7 +141,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<Mutex<
                 }
             }
         } else {
-            println!("client {who} abruptly disconnected");
+            println!("Client {who} abruptly disconnected");
             return;
         }
     }

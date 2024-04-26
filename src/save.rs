@@ -3,7 +3,9 @@ use std::{
     io::{BufRead, Write},
 };
 
-pub fn save(command: String) -> Result<(), Box<dyn std::error::Error>> {
+use anyhow::{Error, Result};
+
+pub fn save(command: String) -> Result<(), Error> {
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -17,7 +19,7 @@ pub fn save(command: String) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn load() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+pub fn load() -> Result<Vec<String>, Error> {
     let file = OpenOptions::new().read(true).open("data.hsrv")?;
     let reader = std::io::BufReader::new(file);
 
