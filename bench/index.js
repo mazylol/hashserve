@@ -19,6 +19,7 @@ ws.on('error', console.error);
 ws.on('open', async function open() {
     for (let i = 0; i < keys.length; i++) {
         ws.send(`ADD ${keys[i]} ${values[i]}`)
-        await sleep(50);
     }
+
+    ws.close();
 })
