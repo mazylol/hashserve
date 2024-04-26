@@ -2,3 +2,4 @@
 /node_modules
 data.hsrv
 /bench/node_modules
+/bench/index.js

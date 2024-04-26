@@ -1,15 +1,15 @@
-const wsm = require("ws");
-const fs = require("fs");
+import { WebSocket } from "ws";
+import { readFileSync } from "fs";
 
-const readFileLines = (filename) =>
-  fs.readFileSync(filename).toString("UTF8").split("\n");
+const readFileLines = (filename: string) =>
+  readFileSync(filename).toString().split("\n");
 
 let keys = readFileLines("keys.txt");
 let values = readFileLines("values.txt");
 
-const ws = new wsm.WebSocket("ws://127.0.0.1:3000/ws?password=balls");
+const ws = new WebSocket("ws://127.0.0.1:3000/ws?password=balls");
 
-function sleep(ms = 0) {
+function sleep(ms: number = 0) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
