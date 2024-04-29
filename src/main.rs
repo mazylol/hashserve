@@ -112,7 +112,9 @@ async fn ws_handler(
     };
     log::info!("`{user_agent}` at {addr} connected.");
 
-    ws.on_upgrade(move |socket| handle_socket(socket, addr, state))
+    ws.on_upgrade(move |socket| async move {
+        let _ = tokio::spawn(handle_socket(socket, addr, state)).await;
+    })
 }
 
 async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<Mutex<ServerState>>) {
@@ -168,7 +170,9 @@ fn handle_command(
                 let _ = state.master_hashmap.insert(key.clone(), value);
 
                 if state.persist && !load_state {
-                    save::save(unparsed_command).context(format!("Failed to append ADD {} to savefile", key)).unwrap();
+                    save::save(unparsed_command)
+                        .context(format!("Failed to append ADD {} to savefile", key))
+                        .unwrap();
                 }
             }
             lexer::Command::Get => {
@@ -190,7 +194,9 @@ fn handle_command(
                 let _ = state.master_hashmap.remove(&key);
 
                 if state.persist && !load_state {
-                    save::save(unparsed_command).context(format!("Failed to append DELETE {key} to savefile")).unwrap();
+                    save::save(unparsed_command)
+                        .context(format!("Failed to append DELETE {key} to savefile"))
+                        .unwrap();
                 }
             }
             lexer::Command::Invalid => {
