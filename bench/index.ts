@@ -7,7 +7,7 @@ const readFileLines = (filename: string) =>
 let keys = readFileLines("keys.txt");
 let values = readFileLines("values.txt");
 
-const ws = new WebSocket("ws://127.0.0.1:3000/ws?password=balls");
+const ws = new WebSocket("ws://127.0.0.1:3000?password=balls");
 
 function sleep(ms: number = 0) {
   return new Promise((resolve) => setTimeout(resolve, ms));

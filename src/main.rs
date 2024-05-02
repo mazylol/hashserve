@@ -15,6 +15,7 @@ use axum::{
 };
 use axum_extra::TypedHeader;
 use clap::Parser;
+use log::Level;
 use serde::Deserialize;
 
 use std::sync::{Arc, Mutex};
@@ -43,13 +44,11 @@ struct Params {
 async fn main() -> anyhow::Result<()> {
     let config = config::Configuration::parse();
 
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "websockets=debug,tower_http=debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::fmt()
+            .with_max_level(Level::INFO)
+            .finish(),
+    )?;
 
     let state = Arc::new(Mutex::new(ServerState {
         master_hashmap: HashMap::new(),
@@ -68,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let app = Router::new()
-        .route("/ws", get(ws_handler))
+        .route("/", get(ws_handler))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
@@ -140,8 +139,11 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<Mutex<
                             }
                         }
                     }
+                    Message::Pong(vec) => {
+                        log::info!("Recieved pong ({:?}) from {who}", vec)
+                    }
                     _ => {
-                        log::error!("Received non-text message from {who}");
+                        log::warn!("Received non-text message from {who}");
                     }
                 }
             }
