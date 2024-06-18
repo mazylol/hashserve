@@ -22,8 +22,6 @@ use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, net::SocketAddr};
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
 use tracing as log;
 
 use axum::extract::connect_info::ConnectInfo;
