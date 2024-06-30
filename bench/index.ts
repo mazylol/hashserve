@@ -9,16 +9,12 @@ let values = readFileLines("values.txt");
 
 const ws = new WebSocket("ws://127.0.0.1:3000?password=balls");
 
-function sleep(ms: number = 0) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 ws.on("error", console.error);
 
 ws.on("open", async function open() {
   let timeAvg = 0;
 
-  for (let i = 0; i <= 100; i++) {
+  for (let i = 0; i <= 999; i++) {
     let startTime = performance.now();
 
     for (let k = 0; k < keys.length; k++) {
@@ -32,7 +28,9 @@ ws.on("open", async function open() {
     timeAvg += endTime - startTime;
   }
 
-  timeAvg /= 100;
+  console.log(`Took ${timeAvg/1000}s to ADD 1000 values`);
+
+  timeAvg /= 1000;
 
   console.log(`Took on average: ${timeAvg}ms`);
 
