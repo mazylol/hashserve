@@ -1,30 +1,28 @@
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
+use anyhow::Context;
+use clap::Parser;
+use serde::Deserialize;
+use tracing::Level;
+
+use std::net::SocketAddr;
+
+use http_body_util::{combinators::BoxBody, BodyExt};
+use http_body_util::{Empty, Full};
+use hyper::body::{Body, Bytes};
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Method, StatusCode};
+use hyper::{Request, Response};
+use hyper_util::rt::TokioIo;
+use tokio::net::TcpListener;
+
 mod config;
 mod lexer;
 mod save;
-
-use anyhow::Context;
-use axum::{
-    extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
-        Query, State,
-    },
-    http::StatusCode,
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
-use axum_extra::TypedHeader;
-use clap::Parser;
-use log::Level;
-use serde::Deserialize;
-
-use std::sync::{Arc, Mutex};
-use std::{collections::HashMap, net::SocketAddr};
-use tower_http::trace::{DefaultMakeSpan, TraceLayer};
-
-use tracing as log;
-
-use axum::extract::connect_info::ConnectInfo;
 
 #[derive(Clone)]
 struct ServerState {
@@ -39,7 +37,7 @@ struct Params {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> anyhow::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = config::Configuration::parse();
 
     tracing::subscriber::set_global_default(
@@ -64,92 +62,107 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let app = Router::new()
-        .route("/", get(ws_handler))
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
-        )
-        .with_state(state);
+    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
 
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", config.port))
-        .await
-        .unwrap();
-
-    log::info!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await
-    .unwrap();
-
-    Ok(())
-}
-
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    user_agent: Option<TypedHeader<headers::UserAgent>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(state): State<Arc<Mutex<ServerState>>>,
-    Query(params): Query<Params>,
-) -> impl IntoResponse {
-    if let Some(password) = params.password {
-        if password != state.lock().unwrap().password {
-            return (StatusCode::UNAUTHORIZED, "Invalid password").into_response();
-        }
-    } else {
-        return (StatusCode::BAD_REQUEST, "Password required").into_response();
-    }
-
-    let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
-        user_agent.to_string()
-    } else {
-        String::from("Unknown browser")
-    };
-    log::info!("`{user_agent}` at {addr} connected.");
-
-    ws.on_upgrade(move |socket| async move {
-        let _ = tokio::spawn(handle_socket(socket, addr, state)).await;
-    })
-}
-
-async fn handle_socket(mut socket: WebSocket, who: SocketAddr, state: Arc<Mutex<ServerState>>) {
-    if socket.send(Message::Ping(vec![1, 2, 3])).await.is_ok() {
-        log::info!("Pinged {who}...");
-    } else {
-        log::error!("Could not send ping {who}");
-        return;
-    }
+    let listener = TcpListener::bind(addr).await?;
 
     loop {
-        if let Some(msg) = socket.recv().await {
-            if let Ok(msg) = msg {
-                log::info!("Received message from {who}: {:?}", msg);
-                match msg {
-                    Message::Text(text) => {
-                        let msg = handle_command(text, state.clone(), false);
+        let (stream, _) = listener.accept().await?;
 
-                        if let Some(msg) = msg {
-                            if socket.send(Message::Text(msg)).await.is_err() {
-                                log::error!("Could not send message to {who}");
-                                return;
-                            }
-                        }
-                    }
-                    Message::Pong(vec) => {
-                        log::info!("Recieved pong ({:?}) from {who}", vec)
-                    }
-                    _ => {
-                        log::warn!("Received non-text message from {who}");
-                    }
-                }
+        let io = TokioIo::new(stream);
+
+        let state = state.clone();
+
+        tokio::task::spawn(async move {
+            if let Err(err) = http1::Builder::new()
+                .serve_connection(io, service_fn(move |req| handler(req, state.clone())))
+                .await
+            {
+                eprintln!("Error serving connection: {:?}", err);
+            }
+            {}
+        });
+    }
+}
+
+async fn handler(
+    req: Request<hyper::body::Incoming>,
+    state: Arc<Mutex<ServerState>>,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    // parse query params
+    let params = req.uri().query().map(|q| {
+        serde_urlencoded::from_str::<Params>(q)
+            .map_err(|e| {
+                tracing::error!("Failed to parse query params: {:?}", e);
+            })
+            .ok()
+    });
+
+    if let Some(Some(params)) = params {
+        if let Some(password) = params.password {
+            let state = state.lock().unwrap();
+            if state.password != password {
+                let mut resp = Response::new(full("Unauthorized"));
+                *resp.status_mut() = hyper::StatusCode::UNAUTHORIZED;
+                return Ok(resp);
             }
         } else {
-            log::info!("Client {who} abruptly disconnected");
-            return;
+            let mut resp = Response::new(full("Unauthorized"));
+            *resp.status_mut() = hyper::StatusCode::UNAUTHORIZED;
+            return Ok(resp);
+        }
+    } else {
+        let mut resp = Response::new(full("Unauthorized"));
+        *resp.status_mut() = hyper::StatusCode::UNAUTHORIZED;
+        return Ok(resp);
+    }
+
+    match (req.method(), req.uri().path()) {
+        (&Method::GET, "/") => {
+            let state = state.lock().unwrap();
+            Ok(Response::new(full(format!("{:?}", state.master_hashmap))))
+        }
+        (&Method::POST, "/") => {
+            let upper = req.body().size_hint().upper().unwrap_or(u64::MAX);
+            if upper > 1024 * 64 {
+                let mut resp = Response::new(full("Body too big"));
+                *resp.status_mut() = hyper::StatusCode::PAYLOAD_TOO_LARGE;
+                return Ok(resp);
+            }
+
+            let whole_body_frames = req.collect().await?.to_bytes();
+
+            let whole_body_vec = whole_body_frames.iter().cloned().collect::<Vec<u8>>();
+
+            let whole_body = String::from_utf8(whole_body_vec).unwrap();
+
+            let resp = handle_command(whole_body, state.clone(), false);
+
+            if let Some(resp) = resp {
+                Ok(Response::new(full(resp)))
+            } else {
+                Ok(Response::new(full("OK")))
+            }
+        }
+
+        _ => {
+            let mut not_found = Response::new(empty());
+            *not_found.status_mut() = StatusCode::NOT_FOUND;
+            Ok(not_found)
         }
     }
+}
+
+fn empty() -> BoxBody<Bytes, hyper::Error> {
+    Empty::<Bytes>::new()
+        .map_err(|never| match never {})
+        .boxed()
+}
+
+fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
+    Full::new(chunk.into())
+        .map_err(|never| match never {})
+        .boxed()
 }
 
 fn handle_command(
