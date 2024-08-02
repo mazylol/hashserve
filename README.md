@@ -15,9 +15,11 @@ I need to implement some sort of obsfucation for requests since nothing is encry
 (or you could just `cargo install --path .`, but that's up to you)
 
 ### Client
-Any websocket client should work, if you need an example checkout `/bench` for an example in TypeScript
+Any http client should work
 
-Connect to the server at `ws://<server-ip>:<port>?password=<password>`
+Query the server at `http://<server-ip>:<port>?password=<password>` with a POST request and a plain text body containing the command
+
+At the moment a GET request will return the entire hashmap as a JSON object
 
 ## Usage
 ### Commands
